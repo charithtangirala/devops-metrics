@@ -1,50 +1,89 @@
 version: '3.4'
 services:
-  jira:
-    image: cptactionhank/atlassian-jira:7.9.2
-    restart: always
-    links:
-      - database
-    volumes:
-      - jira-data:/var/atlassian/jira
-
-  confluence:
-    image: cptactionhank/atlassian-confluence:6.9.0
-    restart: always
-    links:
-      - database
-    volumes:
-      - confluence-data:/var/atlassian/confluence
-
   bitbucket:
     image: atlassian/bitbucket-server:5.10.1
     restart: always
     links:
       - database
+    networks:
+      - metrics
     volumes:
       - bitbucket-data:/var/atlassian/application-data/bitbucket
+
+  jenkins:
+    image: jenkins/jenkins:lts
+    restart: always
+    user: jenkins
+    networks:
+      - metrics
+    ports:
+      - '8181:8080'
+      - '443:8443'
+      - '50000:50000'
+      - '50022:50022'
+    volumes:
+      - ./docker-data/jenkins:/var/jenkins_home
 
   database:
     image: postgres:9.4
     restart: always
     volumes:
       - database-data:/var/lib/postgresql/data
+    networks:
+      - metrics
+
   nginx:
     image: nginx
     restart: always
     ports:
       - "80:80"
     links:
-      - jira
-      - confluence
       - bitbucket
     volumes:
-    - ./:/src
+      - ./:/src
+    networks:
+      - metrics
     command: ./src/scripts/run_nginx.sh
     environment:
-    - DOMAIN
+      - DOMAIN
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.4.0
+    environment:
+      - discovery.type=single-node
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - ./docker-data/elasticsearch:/usr/share/elasticsearch/data
+    networks:
+    - metrics
+
+  kibana:
+   image: kibana:7.4.0
+   ports:
+     - "5601:5601"
+   links:
+     - elasticsearch
+   networks:
+     - metrics
+   depends_on:
+     - elasticsearch
+
+  logstash:
+    image: logstash:7.4.0
+    #links:
+    #- elasticsearch
+    networks:
+      - metrics
+    volumes:
+      - ./:/config-dir
+    command: logstash -f /config-dir/logstash.conf
+    # depends_on:
+    #   - elasticsearch
+
 volumes:
-  jira-data:
-  confluence-data:
   bitbucket-data:
   database-data:
+networks:
+  metrics:
